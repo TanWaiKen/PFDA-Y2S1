@@ -1,0 +1,303 @@
+---
+title: "Individual"
+author: "Tan Wai Ken"
+date: "2024-11-07"
+output:
+  word_document: default
+  html_document: default
+---
+
+# Initiate file location
+## Read Excel
+```{r}
+library(openxlsx)
+# write.xlsx(imputed_df, "imputed_df.xlsx")
+library(readxl)
+library(dplyr)
+library(ggplot2)
+getwd()
+setwd("C:/Users/tanwa/Downloads/Assignment Guide")
+
+demographic <- read.xlsx("imputed_df.xlsx")
+# class(data)
+```
+
+
+# Preprocessing
+Personal_status
+```{r}
+library(dplyr)
+ken_df = demographic %>%
+  dplyr::select(personal_status, age, class)
+
+summary(ken_df)
+
+ken_dfv2 <- ken_df %>%
+  mutate(
+    personal_status = case_when(
+      personal_status %in% c("female div/dep/mar", "male div/sep", "male mar/wid") ~ "Relationship experience",
+      personal_status == "male single" ~ "Single",
+      TRUE ~ personal_status
+    )
+  )
+
+
+ken_dfv2$personal_status = as.factor(ken_dfv2$personal_status)
+summary(ken_dfv2)
+
+```
+
+
+Select Needed data, mutate and change value to categorical
+Change age from numeric to integer (1.5 years old in real world we just call it 1 year old)
+Age
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Make sure there are no continuous value for the age
+ken_dfv2$age = as.integer(ken_dfv2$age)
+
+# To add new column represent different age group
+ken_dfv3 = ken_dfv2 %>% 
+  mutate(binary_class = ifelse(class == "bad", 1, 0), 
+       age_range = cut(age, breaks = c(0, 35, Inf),
+                       labels = c("below 35", "above 35")))
+
+```
+
+# Age vs Class
+## Prove that probability to become good credit risks increase when age is increase
+```{r}
+# Create a table that shows Age towards percentage of being bad or good in credit risk
+ken_dfv3$class = as.factor(ken_dfv3$class)
+ken_dfv3$class = relevel(ken_dfv3$class, ref = "good")
+
+
+df_summary <- ken_dfv3 %>%
+  group_by(age) %>%
+  count(class) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+
+ggplot(df_summary, aes(x = age, y = percentage, fill = class, color = class)) +
+  geom_col(position = "fill") +  # Stacked bar chart
+  scale_y_continuous(labels = scales::percent_format()) +  # Show y-axis as percentage
+  labs(title = "Age vs. Probability of Credit Risk Classes",
+       x = "Age",
+       y = "Percentage") +
+  theme_minimal()
+
+
+# Get only the bad credit risk classification row from the table
+age_summary = df_summary %>% filter (class == "bad")
+# Calculate year-over-year changes
+yearly_changes = diff(age_summary$percentage)
+# Calculate average yearly change
+mean(yearly_changes)
+
+
+
+
+# IV = Category   DV = Category
+age_class_table <- table(ken_dfv3$age_range, ken_dfv3$class)
+
+# Perform Chi-square test
+chi_age <- chisq.test(age_class_table)
+print(chi_age)
+
+ken_dfv3$age_range = relevel(ken_dfv3$age_range, ref = "below 35")
+library(rpart)
+tree_model <- rpart(class ~ age_range, data = ken_dfv3, method = "class")
+summary(tree_model)
+
+
+
+
+
+# IV = Category   DV = Binary
+# Assuming `risk_category` is a binary outcome variable
+
+logit_model = glm(binary_class ~ age_range, data = ken_dfv3, family = binomial)
+summary(logit_model)
+
+logit_model = glm(binary_class ~ age, data = ken_dfv3, family = binomial)
+summary(logit_model)
+
+# Create a scatter plot chart with the smooth line to find out the relation between age 
+# and probability for good and bad credit risk.
+ggplot(df_summary, aes(x = age, y = percentage, color = class)) +
+  geom_point(alpha = 0.7) + # Scatter Plot
+  geom_smooth(method = "glm", se = FALSE) +  # Add smooth lines based on the class
+  labs(title = "Age vs. Probability of Credit Risk Classes",
+       x = "Age",
+       y = "Probability (%)") +
+  theme_minimal()
+
+
+age_summary2 = ken_dfv3 %>% 
+  group_by(age_range) %>% 
+  count(n())
+
+
+
+
+ggplot(ken_dfv3, aes(x = age, y = binary_class)) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), 
+              color = "blue") +
+  labs(title = "Age vs. Probability of Bad Credit Risk",
+       x = "Age",
+       y = "Probability of Bad Credit Risk") +
+  theme_minimal()
+
+
+ggplot(ken_dfv3, aes(age_range, fill = class)) +
+  geom_bar(position = "fill") +
+  labs(title = "Credit Risk by Age Group",
+       x = "Age Group",
+       y = "Proportion of Good/Bad Credit Risk") +
+  theme_minimal()
+
+```
+The p-value for the coefficient of age_rangeafter 35 is indeed very low (< 2.2e-16), which indicates that age group (whether below 35 or above 35) has a statistically significant effect on credit risk classification.
+
+The likelihood of becoming a bad credit risk decrease by 1.34% with each passing year.
+
+exp(-0.029875)≈ 0.9706    0.9706-1*100 = -2.94%
+The coefficient in every increasing year the odds of becoming a bad credit risk will decrease 2.94%
+
+
+
+
+# Personal Status vs Class
+## Prove that probability to become good credit risks increase when candidate is single
+```{r}
+ken_dfv3$personal_status = as.factor(ken_dfv3$personal_status)
+ken_dfv3$personal_status = relevel(ken_dfv3$personal_status, ref = "Single")
+
+# IV = Category   DV = Category
+status_class_table <- table(ken_dfv3$personal_status, ken_dfv3$class)
+
+# Perform Chi-square test
+chi_status <- chisq.test(status_class_table)
+print(chi_status)
+
+  
+# IV = Category   DV = Binary
+logit_model = glm(binary_class ~ personal_status -1, data = ken_dfv3, family = binomial)
+summary(logit_model)
+
+
+ggplot(ken_dfv3, aes(x = personal_status, fill = class)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Diabetes Prevalence by Obesity Status",
+       x = "personal_status",
+       y = "class",
+       fill = "personal_status") +
+  theme_minimal()
+
+
+
+status_summary <- ken_dfv3 %>%
+  group_by(personal_status, class) %>%
+  summarise(total = n()) %>%  # Count the number of occurrences for each class within each personal_status
+  mutate(percentage = total / sum(total) * 100)  # Calculate the percentage within each personal_status group
+
+# Plot the percentage of good and bad credit risk by personal_status
+ggplot(status_summary, aes(x = personal_status, y = percentage, fill = class)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use position = "stack" to stack good and bad categories
+  geom_text(aes(label = round(percentage, 1)), position = position_stack(vjust = 0.5),  # Position labels inside the stacked bars
+            color = "white", size = 3) +
+  labs(title = "Percentage of Good and Bad Credit Risk by Personal Status",
+       x = "Personal Status",
+       y = "Percentage of Good/Bad Credit Risk",
+       fill = "Credit Risk Status") +
+  theme_minimal()
+
+
+ggplot(status_summary, aes(x = "", y = percentage, fill = personal_status)) +
+  geom_bar(width = 1, stat = "identity") +  # Create stacked bar
+  coord_polar("y") +  # Convert to polar coordinates
+  geom_text(aes(label = percentage), position = position_stack(vjust = 0.5),  # Position labels inside slices
+            color = "white", size = 3)+
+  scale_fill_manual(values = c("Relationship experience" = "#FFC1CC",
+                               "Single" = "#FF69B4")) +
+  labs(title = "Percentage of Bad Credit Risk by Personal Status",
+       x = NULL, y = NULL, fill = "Personal Status") +
+  theme_void()+
+  theme(legend.position = "right")
+
+
+library(vcd)
+mosaic(~ personal_status + class, data = ken_dfv3, shade = TRUE)
+
+```
+Although the literature review mention that personal marriage status is not significantly impact the credit risk classification, through the graph we found that:
+
+The p-value for the coefficient of personal_status single is indeed very low (< 2.2e-16), which indicates that personal status (whether single or relationship experience) has a statistically significant effect on credit risk classification.
+
+exp(0.88142)≈ 2.41432    (2.41432-1)*100 = 141.4%
+The coefficient for personal_status suggests that candidates who has relationship experience have 141.43% higher odds of being classified as a "bad" credit risk compared to those single
+
+
+
+
+# Form Complex Hypotesis
+H1 = Adults with ages before 35 and personal status is has relationship experience have a higher likelihood of being classified as having a "bad" candidates in credit risk.
+
+H0 = There is no relationship between ages below 35 , personal status has relationship experience, and the likelihood of being classified as having a "bad" candidates in credit risk.
+
+```{r}
+# Assuming `risk_category` is a binary outcome variable
+ken_dfv3$age_range = relevel(ken_dfv3$age_range, ref = "above 35")
+ken_dfv3$personal_status = relevel(ken_dfv3$personal_status, ref = "Single")
+ken_dfv3$class = relevel(ken_dfv3$class, ref = "good")
+
+logit_model = glm(class ~ personal_status*age_range, data = ken_dfv3, family = binomial)
+summary(logit_model)
+
+
+# Load the required libraries
+library(randomForest)
+library(caret)
+
+
+# Train the random forest model on the training data
+rf_model <- randomForest(class ~ personal_status*age_range, data = ken_dfv3, ntree = 100)
+# Assuming 'ken_dfv3' is your data and 'class' is the target variable
+# Split the data into training and testing sets (80% train, 20% test)
+set.seed(123)  # Set seed for reproducibility
+trainIndex <- createDataPartition(ken_dfv3$class, p = 0.80, list = FALSE)
+train_data <- ken_dfv3[trainIndex, ]
+test_data <- ken_dfv3[-trainIndex, ]
+
+# Print the model summary
+print(rf_model)
+
+# Make predictions on the test data
+predictions <- predict(rf_model, test_data)
+
+# Evaluate the model's performance using confusion matrix and accuracy
+confusionMatrix(predictions, test_data$class)
+
+
+
+
+ggplot(ken_dfv3, aes(age_range, fill = class)) + 
+  geom_bar(position = "fill") +
+  facet_wrap(~ personal_status) +
+  labs(title = "Credit Risk by Age Group and Personal Status",
+       x = "Age Group",
+       y = "Proportion of Good/Bad Credit Risk") +
+  theme_minimal()
+
+```
+
+
+i.	The two-way interaction is statistically significant (p < 0.05) and positive (8.90e-10), indicating that the combination of all three factors has a synergistic effect on the odds of developing diabetes.
+
+
+ii.	The result supports that has relationship experience  are strongly associated with a higher risk of developing bad credit risks. While the age p value in this case are (p > 0.05) indicates that it has less significant to the final credit risk classification compared to personal status.
+
+
+

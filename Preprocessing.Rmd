@@ -1,0 +1,256 @@
+---
+title: "R"
+output: word_document
+date: "2024-10-28"
+---
+Focus: personal_status
+```{r}
+rm(list = ls())
+
+```
+
+Load library and dataset
+```{r}
+# install.packages("scales")
+library(tidyverse)
+library(dplyr)
+library(scales)
+library(ggplot2)
+library(readxl)
+getwd()
+setwd("C:/Users/tanwa/Downloads/Assignment Guide")
+
+df <- read.csv("C:/Users/tanwa/Downloads/Assignment Guide/credit_risk_classification.csv")
+
+# class(df)
+```
+Delete first row
+```{r}
+df$X = NULL
+```
+
+
+Understanding dataset
+```{r}
+colnames(df)
+dim(df)
+head(df)
+summary(df$purpose)
+```
+
+
+Data has no duplicated record
+```{r}
+sum(duplicated(df))
+nrow(df)
+distinct(df)
+nrow(df)
+```
+No empty value
+```{r}
+sum(is.na(df))
+missing_sum <- df  %>%
+  summarise(across(everything(), ~sum(is.na(.))))
+print(missing_sum)
+```
+
+check the type of variables in the dataset
+```{r}
+numeric_vars <- names(df)[sapply(df, is.numeric)]
+numeric_vars
+categorical_vars <- names(df)[sapply(df, is.factor)]
+categorical_vars
+```
+
+
+```{r}
+df$other_payment_plans <-replace(df$other_payment_plans, df$other_payment_plans == "", "no known payment plan")
+
+df$purpose <-replace(df$purpose, df$purpose == "new car" | df$purpose == "used car", "car")
+
+df$purpose <-replace(df$purpose, df$purpose == "retraining", "education")
+```
+
+Type Conversion
+```{r}
+
+df <- df %>%  
+  dplyr::select(-X)
+df$checking_status <- as.factor(df$checking_status)
+df$duration <- as.integer(df$duration)
+df$credit_history <- as.factor(df$credit_history)
+df$purpose <- as.factor(df$purpose)
+# df$credit_amount <- round(as.numeric(df$credit_amount), 2)
+df$savings_status <- as.factor(df$savings_status)
+df$employment <- as.factor(df$employment)
+# df$installment_commitment <- round(as.numeric(df$installment_commitment), 1)
+# df$installment_commitment <- percent_format(accuracy = 0.1)(df$installment_commitment / 100)
+typeof(df$installment_commitment)
+df$personal_status <- as.factor(df$personal_status)
+df$other_parties <- as.factor(df$other_parties)
+# df$residence_since <- round(as.numeric(df$residence_since), 1)
+df$property_magnitude <- as.factor(df$property_magnitude)
+df$age <- as.integer(df$age)
+df$other_payment_plans <- as.factor(df$other_payment_plans)
+df$housing <- as.factor(df$housing)
+df$existing_credits <- as.integer(df$existing_credits)
+df$job <- as.factor(df$job)
+df$num_dependants <- as.integer(df$num_dependants)
+df$own_telephone <- as.factor(df$own_telephone)
+df$foreign_worker <- as.factor(df$foreign_worker)
+df$class <- as.factor(df$class)
+head(df)
+summary(df)
+view(df)
+# data$credit_amount <- as.numeric(data$credit_amount)
+```
+Identify the distribution type of all numeric independent variables
+It is worth noticing that the distribution of all numeric independant variables is non-normal (e.g. exponential, uneven)
+
+
+mice (Multiple Imputation by Chained Equations) is somewhat like a machine learning approach, as it uses predictive modeling to estimate and fill in missing data values. 
+```{r}
+library(mice)
+#blocks <- list(
+#  numeric_block = c("duration","credit_amount", "installment_commitment", #"residence_since", "age", "existing_credits", "num_dependants"),
+#  categorical_block = c("checking_status", "checking_status", "credit_history", "purpose", #"savings_status", "employment", "personal_status", "other_parties", "property_magnitude", #"other_payment_plans", "housing", "job", "own_telephone", "foreign_worker", "class" )
+# )
+# structure2 = c(numeric_block = "pmm", categorical_block = "polyreg")
+
+
+df2$other_payment_plans[df2$other_payment_plans == ""] <- NA
+summary(df2$other_payment_plans)
+structure = c(rep("", 13), "polyreg", rep("", 7))
+
+df2$other_payment_plans <- as.factor(df2$other_payment_plans)
+my_imp = mice(df2, m=15, method=structure, seed = 123)
+
+summary(my_imp$imp$other_payment_plans)
+completed_data <- complete(my_imp)
+summary(completed_data$other_payment_plans)
+
+"" 
+NA
+
+255
+
+
+stripplot(my_imp, "other_payment_plans", pch = 20, cex = 1.2)
+
+densityplot(my_imp, ~ other_payment_plans)
+
+```
+
+
+
+
+Z-score method can be useful when data closely follow a normal distribution. However, all the numeric independent variables are either integer values or deviates from normality, and the IQR method offers more.
+https://medium.com/@ayeshasidhikha188/unveiling-outliers-exploring-z-score-and-iqr-methods-for-boxplots-67b0f3086720
+https://procogia.com/interquartile-range-method-for-reliable-data-analysis/#:~:text=The%20Z%2Dscore%20method%20is,closely%20follow%20a%20normal%20distribution.
+  
+```{r}
+numeric_cols <- df %>% 
+  select(duration, credit_amount, installment_commitment, residence_since, age, existing_credits, num_dependants)
+
+continuous_cols <- df %>% 
+  select(credit_amount, installment_commitment, residence_since)
+
+for (col in colnames(continuous_cols)){
+  # ggplot(continuous_cols, aes(x = continuous_cols[[col]])) +
+  # geom_histogram(binwidth = 5, fill = "blue", color = "black", alpha = 0.7) +
+  # labs(title = paste("Distribution of", col), x = col, y = "Count") +
+  # theme_minimal()
+  
+  # Density plot
+  distribution <- ggplot(continuous_cols, aes_string(x = col)) +
+    geom_density(fill = "blue", alpha = 0.5) +
+    labs(title = paste("Density Plot of", col), x = col, y = "Density") +
+    theme_minimal()
+  print(distribution)
+}
+
+View(df$residence_since)
+```
+
+
+Identify outlier
+
+Installment_commitment and residence_since has no outlier.
+num_dependants has a small range of values, thus no need to find outlier
+```{r}
+for (col in names(numeric_cols)) {
+  boxplot(numeric_cols[[col]], main = col, ylab = "Values", xlab = col)
+}
+```
+
+
+```{r}
+outlier_cols <- c("duration", "credit_amount", "age", "existing_credits")
+
+for (col in outlier_cols){
+  # Calculate Q1 (25th percentile) and Q3 (75th percentile)
+  Q1 <- quantile(df[[col]], 0.25)
+  Q3 <- quantile(df[[col]], 0.75)
+  IQR <- Q3 - Q1
+  
+  # Define outlier bounds
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  
+  df$col <-replace(df[[col]], df[[col]] < lower_bound, lower_bound)
+  df$col <-replace(df[[col]], df[[col]] > upper_bound, upper_bound)
+  
+  no_outlier <- boxplot(df$col)
+  print(no_outlier)
+}
+```
+
+Variable Importance Analysis + Permutation Feature Analysis
+```{r}
+# install.packages("varImp")
+library(caret)
+library(randomForest)
+library(varImp)
+# Install iml package for model-agnostic interpretability
+# install.packages("iml")
+library(iml)
+
+# Create dataframes for each category
+demographic <- df %>%
+  dplyr::select(age, personal_status, num_dependants, own_telephone, class)
+view(demographic)
+
+employment_residence <- df %>%
+  dplyr::select(foreign_worker, job, residence_since, employment, housing, class)
+
+financial <- df %>%
+  dplyr::select(checking_status, savings_status, property_magnitude, installment_commitment, other_payment_plans, class)
+
+loan_credit <- df %>%
+  dplyr::select(credit_amount, credit_history, duration, purpose, existing_credits, other_parties, class)
+
+variable_importance <- function(category){
+  # set.seed(100)
+  rf <- randomForest(category$class ~ . , data= category, importance=TRUE) # fit the random forest with default parameter
+  
+  # importance_values <- importance(rf)
+  # 
+  # # Rank variables by importance
+  # importance_ranked <- data.frame(Variable = rownames(importance_values),
+  #                                 Importance = importance_values[, 1])  # MeanDecreaseAccuracy
+  # 
+  # # Sort by importance
+  # importance_ranked <- importance_ranked[order(-importance_ranked$Importance), ]
+  # print(importance_ranked)
+  
+  randomForest::varImpPlot(rf, 
+                           sort = TRUE, 
+                           main = "Variable Importance Plot")
+}
+
+variable_importance(demographic)
+variable_importance(employment_residence)
+variable_importance(financial)
+variable_importance(loan_credit)
+variable_importance(df)
+```

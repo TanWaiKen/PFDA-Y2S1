@@ -1,0 +1,294 @@
+---
+title: "Assignment Data Preprocessing"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/tanwa/Downloads/Assignment Guide")
+
+```
+
+```{r}
+rm(list = ls())
+
+```
+
+Load library and dataset
+```{r}
+# install.packages("scales")
+library(tinytex)
+library(tidyverse)
+library(dplyr)
+library(scales)
+library(ggplot2)
+getwd()
+setwd("C:/Users/tanwa/Downloads/Assignment Guide")
+
+df <- read.csv("credit_risk_classification.csv")
+# class(data)
+```
+
+
+Understanding dataset
+```{r}
+colnames(df)
+dim(df)
+head(df)
+summary(df)
+```
+
+
+**Type Conversion**
+All numeric columns are treated as decimal values to pass more accurate value to machine learnimg.
+Please convert the following caolumns into the correct format **during output**.
+duration, age -> int
+installment_commitment -> 1 decimal place / percentage (str)
+residence_since -> 1 decimal place
+credit_amount -> 2 decimal places
+
+```{r}
+df <- df[-1]
+view(df)
+df$checking_status <- as.factor(df$checking_status)
+# df$duration <- as.integer(df$duration)
+df$credit_history <- as.factor(df$credit_history)
+df$purpose <- as.factor(df$purpose)
+# df$credit_amount <- round(as.numeric(df$credit_amount), 2)
+df$savings_status <- as.factor(df$savings_status)
+df$employment <- as.factor(df$employment)
+# df$installment_commitment <- round(as.numeric(df$installment_commitment), 1)
+# df$installment_commitment <- percent_format(accuracy = 0.1)(df$installment_commitment / 100)
+df$personal_status <- as.factor(df$personal_status)
+df$other_parties <- as.factor(df$other_parties)
+# df$residence_since <- round(as.numeric(df$residence_since), 1)
+df$property_magnitude <- as.factor(df$property_magnitude)
+# df$age <- as.integer(df$age)
+df$other_payment_plans <- as.factor(df$other_payment_plans)
+df$housing <- as.factor(df$housing)
+df$existing_credits <- as.integer(df$existing_credits)
+df$job <- as.factor(df$job)
+df$num_dependants <- as.integer(df$num_dependants)
+df$own_telephone <- as.factor(df$own_telephone)
+df$foreign_worker <- as.factor(df$foreign_worker)
+df$class <- as.factor(df$class)
+head(df)
+summary(df)
+# view(df)
+```
+
+Only the column other_payment_plans has missing values, thus requires imputation.
+```{r}
+# Convert all empty strings in the dataset to NA
+df[df == ''] <- NA
+# Confirm that empty strings are now NAs
+# view(df)  
+
+# Check the number of missing values across the dataset
+sum(is.na(df))
+missing_sum <- colSums(is.na(df))
+print(missing_sum)
+
+```
+
+Quick Classification of Missing Data
+
+Usually a safe maximum threshold is 5% of the total for large datasets. If missing data for a certain feature or sample is more than 5% then you probably should leave that feature or sample out.
+```{r}
+calMCAR <- function(x){sum(is.na(x))/length(x)*100}
+# apply(df,1,calMCAR) 
+# margin == 1 -> function is applied across row
+apply(df,2,calMCAR) # margin == 2 -> function is applied across the column.
+```
+
+Techniques suggested by Dr. Kulo -> KNN
+- Less Effective with High Dimensionality: With many features, it can be hard to determine “similar” neighbors, as the concept of distance becomes less meaningful.
+
+```{r}
+library(mice)
+imputed_data <- mice(df, m = 15, method = "polyreg", seed = 400, printFlag = FALSE)
+summary(imputed_data)
+
+
+all_df <- complete(imputed_data, 'long')
+
+# Calculate the most frequent imputed value for each missing observation (Mode imputation)
+grouped_df <- all_df %>%
+  group_by(.id, other_payment_plans) %>%  # Group by row ID and imputed category
+  dplyr::summarise(count = n(), .groups = "drop") %>%  # Count occurrences of each category per ID
+  arrange(.id, desc(count)) %>%  # Sort by .id and then by count in descending order
+  slice_max(count, by = ".id", with_ties = FALSE) %>%  # Select the most frequent category for each .id
+  ungroup() %>%
+  dplyr::select(.id, final_payment_plans = other_payment_plans)
+view(grouped_df)
+
+grouped_df$final_payment_plans = as.character(grouped_df$final_payment_plans)
+df$other_payment_plans = as.character(df$other_payment_plans)
+# Join the results with the original dataframe
+imputed_df <- df %>%
+  dplyr::mutate(row_number = row_number()) %>%
+  left_join(grouped_df, by = c("row_number" = ".id")) %>%
+  dplyr::mutate(other_payment_plans = ifelse(is.na(other_payment_plans), final_payment_plans, other_payment_plans)) %>%
+  dplyr::select(-final_payment_plans, -row_number)  # Remove temporary columns column
+
+imputed_df$other_payment_plans = as.factor(imputed_df$other_payment_plans)
+
+head(imputed_df)
+```
+
+# Ken
+
+# Preprocessing for Age Column
+# Change age from numeric to integer (1.5 years old in real world we just call it 1 year old)
+
+```{r}
+
+final_df = imputed_df %>% 
+  dplyr::select(checking_status, employment, purpose, duration, age, personal_status, class)
+
+
+
+final_df = final_df %>%
+  mutate(
+    personal_status = case_when(
+      personal_status %in% c("female div/dep/mar", "male div/sep", "male mar/wid") ~ "Relationship experience",
+      personal_status == "male single" ~ "Single",
+      TRUE ~ personal_status
+    )
+  )
+
+final_df$personal_status = as.factor(final_df$personal_status)
+
+
+# Make sure there are no continuous value for the age
+final_df$age = as.integer(imputed_df$age)
+
+# To add new column represent different age group
+final_df <- final_df %>%
+  mutate(binary_class = ifelse(class == "bad", 1, 0), 
+       age_range = cut(age, breaks = c(0, 35, Inf),
+                       labels = c("below 35", "above 35")))
+
+final_df$age_range = as.factor(final_df$age_range)
+
+
+final_df$personal_status = relevel(final_df$personal_status, ref = "Single")
+final_df$age_range = relevel(final_df$age_range, ref = "above 35")
+```
+
+
+# Samantha
+```{r}
+final_df <- final_df %>%
+   mutate(purpose_grp = ifelse(
+     purpose == "new car",'New car',
+     'Other'  # Remaining categories are grouped into "Other"
+   ))
+
+final_df$ purpose_grp<- as.factor(final_df$ purpose_grp)
+final_df$purpose_grp <- relevel(final_df$purpose_grp, ref = "Other")
+
+final_df <- final_df %>%
+ mutate(duration_grp = ifelse(duration > 12, "long-term", "short-term"))
+ 
+final_df$duration_grp<- as.factor(final_df$ duration_grp)
+final_df$duration_grp <- relevel(final_df$duration_grp, ref="short-term")
+```
+
+
+
+# Lee Yi Ting
+```{r}
+
+final_df <- final_df %>%
+  mutate(
+    employment = case_when(
+      employment %in% c("<1","1<=X<4")~ "X < 4", # grouped "<1","1<=X<4" to X <4
+      employment %in% c("4<=X<7",">=7")~"X >= 4", #grouped "4<=X<7",">=7" to X >= 4
+      TRUE ~ employment                
+    )
+  )
+final_df$employment = as.factor(final_df$employment)
+
+final_df$employment <- relevel(final_df$employment, ref = "X >= 4")
+
+```
+
+
+# Yit Xiu Zhee
+```{r}
+
+final_df <- final_df %>%
+  mutate(
+    checking_status = case_when(
+      checking_status%in% c(">=200","0<=X<200")~"positive",
+      checking_status%in% c("<0")~"negative",
+      TRUE ~ checking_status                
+    )
+  )
+
+final_df$checking_status <- as.factor(final_df$checking_status)
+
+final_df$checking_status <- relevel(final_df$checking_status, ref = "positive")
+
+
+
+```
+
+```{r}
+library(caret)
+library(randomForest)
+
+final_df$class <- relevel(final_df$class, ref="bad")
+
+# Train the random forest model on the training data
+rfmodel = randomForest(class ~ personal_status * employment * checking_status *
+                          duration_grp, data = final_df, ntree = 100) 
+# ntree determines how many trees are included in the forest.
+
+set.seed(123) # Set consistences randomness
+
+# Print the model summary
+print(rfmodel)
+
+# Make predictions on the test data
+predictions = predict(rfmodel, final_df)
+
+# Evaluate the model's performance using confusion matrix and accuracy
+confusionMatrix(predictions, final_df$class)
+```
+
+
+```{r}
+
+library(broom)
+final_df$class <- relevel(final_df$class, ref="good")
+
+
+# Fit the logistic regression model
+logit_model <- glm(class ~ personal_status * employment * 
+                   checking_status * duration_grp,
+                   data = final_df, 
+                   family = binomial())
+
+summary(logit_model)
+
+# options(max.print = 2000)  # Adjust the number to fit your data size
+# print(summary(logit_model))
+
+# # Tidy the model output to get coefficients and p-values
+# tidy_model <- tidy(logit_model, conf.int = TRUE) %>%
+#   mutate(term = reorder(term, estimate))  # Reorder terms for better visualization
+# 
+# 
+# # View the p-value column
+# p_values <- model_tidy$p.value
+
+```
+
+
+
+
